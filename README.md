@@ -2,8 +2,8 @@
 
 Đây là một dự án full-stack xây dựng một dashboard tương tác để phân tích và trực quan hóa dữ liệu về hành vi sử dụng mạng xã hội. Dự án được thiết kế để thể hiện các kỹ năng về xử lý dữ liệu, phát triển API và xây dựng giao diện người dùng.
 
-![Ảnh chụp màn hình Dashboard](https://i.imgur.com/your-screenshot-url.png) 
-*(Mẹo: Hãy chụp một ảnh đẹp của dashboard và upload lên một trang như Imgur để lấy link dán vào đây)*
+<img width="1840" height="934" alt="image" src="https://github.com/user-attachments/assets/87358ff2-e9b7-4659-be85-4e93a25c7632" />
+
 
 ## Các tính năng chính
 

@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import FileUploader from './components/FileUploader';
 import DynamicChart from './components/DynamicChart';
-import type { ApiColumn } from './types'; // Import kiểu mới
+import type { ApiColumn } from './types';
+
+
 
 const App: React.FC = () => {
   const [columns, setColumns] = useState<ApiColumn[]>([]);
@@ -11,8 +13,12 @@ const App: React.FC = () => {
   const handleUploadSuccess = (availableColumns: ApiColumn[]) => {
     setColumns(availableColumns);
     setErrorMessage('');
+    // Tự động chọn cột đầu tiên để phân tích sau khi upload thành công
     if (availableColumns.length > 0) {
-      setSelectedColumnKey(availableColumns[0].apiKey); // Chọn apiKey của cột đầu tiên
+      setSelectedColumnKey(availableColumns[0].apiKey);
+    } else {
+      // Nếu không có cột nào phù hợp, reset lựa chọn
+      setSelectedColumnKey('');
     }
   };
 
@@ -20,8 +26,9 @@ const App: React.FC = () => {
     setSelectedColumnKey(event.target.value);
   };
 
-  // Tìm displayName tương ứng để hiển thị trên biểu đồ
-  const selectedColumnDisplayName = columns.find(c => c.apiKey === selectedColumnKey)?.displayName || selectedColumnKey;
+  // Tìm displayName tương ứng để hiển thị trên biểu đồ.
+  // Nếu không tìm thấy (trường hợp selectedColumnKey rỗng), displayName cũng sẽ là chuỗi rỗng.
+  const selectedColumnDisplayName = columns.find(c => c.apiKey === selectedColumnKey)?.displayName || '';
 
   return (
     <div className="bg-slate-50 min-h-screen">
@@ -47,7 +54,6 @@ const App: React.FC = () => {
                 onChange={handleColumnChange}
                 className="w-full p-2 border border-gray-300 rounded-lg"
               >
-                {/* Hiển thị displayName, nhưng value là apiKey */}
                 {columns.map(col => (
                   <option key={col.apiKey} value={col.apiKey}>
                     {col.displayName}
@@ -59,7 +65,6 @@ const App: React.FC = () => {
         </div>
 
         <div className="lg:col-span-2">
-          {/* Truyền cả hai key và displayName xuống component con */}
           <DynamicChart 
             columnKey={selectedColumnKey} 
             columnDisplayName={selectedColumnDisplayName} 

@@ -10,10 +10,10 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tool
 
 interface DynamicChartProps {
   columnKey: string;
-  columnName: string;
+  columnDisplayName: string;
 }
 
-const DynamicChart: React.FC<DynamicChartProps> = ({ columnName, columnKey }) => {
+const DynamicChart: React.FC<DynamicChartProps> = ({ columnDisplayName, columnKey }) => {
   const [chartData, setChartData] = useState<ChartData<'bar' | 'pie'> | null>(null);
   const [error, setError] = useState('');
   const [chartType, setChartType] = useState<'bar' | 'pie'>('pie');
@@ -35,7 +35,7 @@ const DynamicChart: React.FC<DynamicChartProps> = ({ columnName, columnKey }) =>
         setChartData({
           labels: data.map(item => item.label),
           datasets: [{
-            label: `Count of ${columnName}`,
+            label: `Count of ${columnDisplayName}`,
             data: data.map(item => item.count),
             backgroundColor: newChartType === 'pie' ? [
               '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', 
@@ -47,12 +47,12 @@ const DynamicChart: React.FC<DynamicChartProps> = ({ columnName, columnKey }) =>
         });
       })
       .catch(err => {
-        const errorMessage = err.response?.data?.detail || `Could not analyze column: ${columnName}`;
+        const errorMessage = err.response?.data?.detail || `Could not analyze column: ${columnDisplayName}`;
         setError(errorMessage);
       });
   }, [columnKey]); // Effect này sẽ chạy lại mỗi khi `columnName` thay đổi.
 
-  if (!columnName) {
+  if (!columnKey) {
     return (
       <div className="bg-white p-6 rounded-xl shadow-lg flex items-center justify-center h-full">
         <p className="text-gray-500">Please select a column to visualize.</p>
@@ -61,7 +61,7 @@ const DynamicChart: React.FC<DynamicChartProps> = ({ columnName, columnKey }) =>
   }
 
   return (
-    <ChartCard title={`Analysis for: ${columnName}`}>
+    <ChartCard title={`Analysis for: ${columnDisplayName}`}>
       {error && <p className="text-red-500 text-center">{error}</p>}
       {!chartData && !error && <p className="text-gray-500 text-center">Loading analysis...</p>}
       {chartData && chartType === 'bar' && <Bar data={chartData as ChartData<'bar'>} options={{ maintainAspectRatio: false, indexAxis: 'y' }} />}

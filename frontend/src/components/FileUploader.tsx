@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-
+import type { ApiColumn } from '../types';
 interface FileUploaderProps {
-  onUploadSuccess: (columns: string[]) => void;
+  onUploadSuccess: (columns: ApiColumn[]) => void;
   onUploadError: (message: string) => void;
 }
 
@@ -42,7 +42,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadSuccess, onUploadEr
       });
 
       // Lấy danh sách các cột CÓ THỂ PHÂN TÍCH ĐƯỢC (dạng chữ) từ API /api/columns
-      const columnsResponse = await axios.get<{ columns: string[] }>('http://127.0.0.1:8000/api/columns');
+      const columnsResponse = await axios.get<{ columns: ApiColumn[] }>('http://127.0.0.1:8000/api/columns');
       onUploadSuccess(columnsResponse.data.columns);
 
     } catch (error: any) {

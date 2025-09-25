@@ -4,13 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview",
-    "tailwind:init": "tailwindcss init -p" 
+    "frontend": "vite",
+    "tailwind": "tailwindcss -i ./src/index.css -o ./src/output.css --watch",
+    "backend": "cd ../backend && uvicorn main:app --reload",
+    "dev": "concurrently \"npm run frontend\" \"npm run tailwind\" \"npm run backend\""
   },
   "dependencies": {
+    "@tailwindcss/cli": "^4.1.13",
     "@tailwindcss/vite": "^4.1.13",
     "axios": "^1.12.2",
     "chart.js": "^4.5.0",
@@ -22,7 +22,7 @@
     "@eslint/js": "^9.36.0",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
-    "@vitejs/plugin-react-swc": "^4.1.0",
+    "@vitejs/plugin-react": "^5.0.3",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.36.0",
     "eslint-plugin-react-hooks": "^5.2.0",

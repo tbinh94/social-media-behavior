@@ -1,14 +1,15 @@
 import pandas as pd
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import re
 
 # Khởi tạo ứng dụng FastAPI
 app = FastAPI()
 
 # Cấu hình CORS để cho phép React frontend gọi API
-# Trong môi trường thực tế, bạn nên giới hạn origins cụ thể
 origins = [
-    "http://localhost:3000", # Địa chỉ mặc định của React app
+    "http://localhost:3000", # Cổng của Create React App (dự phòng)
+    "http://localhost:5173", # Cổng mặc định của Vite
 ]
 
 app.add_middleware(
@@ -19,63 +20,86 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Đọc và xử lý dữ liệu ngay khi server khởi động
-try:
-    # Đảm bảo đường dẫn file là chính xác
-    df = pd.read_csv('data/HybridDataset.csv')
+# --- PHẦN XỬ LÝ DỮ LIỆU ĐÃ ĐƯỢC CẬP NHẬT ---
+def load_and_clean_data(filepath: str):
+    """
+    Hàm duy nhất để đọc, làm sạch tên cột và chuẩn hóa dữ liệu.
+    """
+    try:
+        df = pd.read_csv(filepath)
+    except FileNotFoundError:
+        print(f"Lỗi: Không tìm thấy file tại '{filepath}'.")
+        return None
+
+    # B1: Làm sạch tên cột (chuyển thành snake_case)
+    # Ví dụ: '1. What is your age group?' -> 'what_is_your_age_group'
+    def clean_col(name):
+        name = name.strip()
+        name = re.sub(r'[^a-zA-Z0-9\s]', '', name) # Bỏ ký tự đặc biệt
+        name = re.sub(r'\s+', '_', name) # Thay khoảng trắng bằng gạch dưới
+        return name.lower()
+
+    df.columns = [clean_col(col) for col in df.columns]
+
+    # B2: Làm sạch dữ liệu bên trong các cột cụ thể
+    # Dùng .get() để tránh lỗi nếu cột không tồn tại
+    if df.get('how_many_hours_per_day_do_you_spend_online') is not None:
+        df['how_many_hours_per_day_do_you_spend_online'] = df['how_many_hours_per_day_do_you_spend_online'].str.replace('"', '', regex=False)
+        
+    if df.get('what_is_your_most_used_social_media_platform') is not None:
+        df['what_is_your_most_used_social_media_platform'] = df['what_is_your_most_used_social_media_platform'].str.strip()
+        df['what_is_your_most_used_social_media_platform'] = df['what_is_your_most_used_social_media_platform'].replace({
+            'X (Formerly Twitter)': 'X',
+            'WhatsApp': 'Whatsapp' # Chuẩn hóa Whatsapp
+        })
     
-    # Một vài bước làm sạch dữ liệu cơ bản
-    # Đổi tên cột cho dễ sử dụng
-    df.rename(columns={
-        '1. What is your age?': 'Age',
-        '2. What is your gender?': 'Gender',
-        '3. What is your occupation?': 'Occupation',
-        '5. How many hours a day do you spend online?': 'DailyHours',
-        '8. What is the most used social media platform?': 'MostUsedPlatform'
-    }, inplace=True)
+    return df
 
-except FileNotFoundError:
-    print("Lỗi: Không tìm thấy file HybridDataset.csv trong thư mục data. Hãy chắc chắn bạn đã đặt file đúng chỗ.")
-    df = None
+# Đọc dữ liệu khi server khởi động
+df_original = load_and_clean_data('data/HybridDataset.csv')
 
-# --- Định nghĩa các API Endpoints ---
+# --- ĐỊNH NGHĨA CÁC API ENDPOINTS ---
 
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the Social Media User Behavior API"}
 
-# Endpoint: Phân bổ người dùng theo độ tuổi
-@app.get("/api/demographics/age-distribution")
+def create_response(df: pd.DataFrame, column_name: str):
+    """Hàm trợ giúp để tạo response, tránh lặp code."""
+    if df is None:
+        return {"error": "Dataset not loaded or is empty."}
+    if column_name not in df.columns:
+        return {"error": f"Column '{column_name}' not found. Available columns: {list(df.columns)}"}
+    
+    counts = df[column_name].value_counts().reset_index()
+    counts.columns = ['label', 'count']
+    return counts.to_dict(orient='records')
+
+# CÁC ENDPOINT SỬ DỤNG TÊN CỘT ĐÃ ĐƯỢC LÀM SẠCH (snake_case)
+@app.get("/api/age-distribution")
 def get_age_distribution():
-    if df is not None:
-        age_counts = df['Age'].value_counts().reset_index()
-        age_counts.columns = ['age_group', 'count']
-        return age_counts.to_dict(orient='records')
-    return {"error": "Dataset not loaded"}
+    return create_response(df_original, 'what_is_your_age_group')
 
-# Endpoint: Phân bổ người dùng theo nghề nghiệp
-@app.get("/api/demographics/occupation-distribution")
+@app.get("/api/occupation-distribution")
 def get_occupation_distribution():
-    if df is not None:
-        occupation_counts = df['Occupation'].value_counts().reset_index()
-        occupation_counts.columns = ['occupation', 'count']
-        return occupation_counts.to_dict(orient='records')
-    return {"error": "Dataset not loaded"}
+    return create_response(df_original, 'what_is_your_occupation')
 
-# Endpoint: Phân bổ thời gian sử dụng hàng ngày
-@app.get("/api/usage/daily-hours")
-def get_daily_hours():
-    if df is not None:
-        hours_counts = df['DailyHours'].value_counts().reset_index()
-        hours_counts.columns = ['daily_hours', 'count']
-        return hours_counts.to_dict(orient='records')
-    return {"error": "Dataset not loaded"}
-
-# Endpoint: Các nền tảng được sử dụng nhiều nhất
-@app.get("/api/usage/platform-popularity")
+@app.get("/api/platform-popularity")
 def get_platform_popularity():
-    if df is not None:
-        platform_counts = df['MostUsedPlatform'].value_counts().reset_index()
-        platform_counts.columns = ['platform', 'count']
-        return platform_counts.to_dict(orient='records')
-    return {"error": "Dataset not loaded"}
+    return create_response(df_original, 'what_is_your_most_used_social_media_platform')
+
+@app.get("/api/daily-hours")
+def get_daily_hours():
+    column_name = 'how_many_hours_per_day_do_you_spend_online'
+    if df_original is None or column_name not in df_original.columns:
+        return create_response(df_original, column_name)
+    
+    # Sắp xếp lại thứ tự cho hợp lý
+    order = ['Less than 2', '2-4', '4-6', '6-8', 'More than 8']
+    counts = df_original[column_name].value_counts().reindex(order).reset_index()
+    counts.columns = ['label', 'count']
+    return counts.to_dict(orient='records')
+
+@app.get("/api/device-usage")
+def get_device_usage():
+    return create_response(df_original, 'what_device_do_you_use_most_to_access_the_internet')

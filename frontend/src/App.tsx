@@ -2,6 +2,7 @@ import React from 'react';
 import AgeDistributionChart from './components/AgeDistributionChart';
 import PlatformPopularityChart from './components/PlatformPopularityChart';
 import OccupationChart from './components/OccupationChart';
+import './output.css'
 
 const App: React.FC = () => {
   return (

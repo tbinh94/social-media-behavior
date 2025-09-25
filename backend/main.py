@@ -1,15 +1,20 @@
 import pandas as pd
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import io
 import re
+from typing import List, Dict
 
 # Khởi tạo ứng dụng FastAPI
-app = FastAPI()
+app = FastAPI(
+    title="Dynamic CSV Analysis API",
+    description="An API to upload a CSV file and perform dynamic data analysis on its columns.",
+    version="1.0.0",
+)
 
-# Cấu hình CORS để cho phép React frontend gọi API
+# Cấu hình CORS để cho phép frontend Vite giao tiếp
 origins = [
-    "http://localhost:3000", # Cổng của Create React App (dự phòng)
-    "http://localhost:5173", # Cổng mặc định của Vite
+    "http://localhost:5173",
 ]
 
 app.add_middleware(
@@ -20,86 +25,114 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- PHẦN XỬ LÝ DỮ LIỆU ĐÃ ĐƯỢC CẬP NHẬT ---
-def load_and_clean_data(filepath: str):
+# === Biến toàn cục để lưu trữ DataFrames ===
+# LƯU Ý: Đây là cách làm đơn giản cho project demo.
+# Trong môi trường thực tế, nên dùng cache (Redis) hoặc database để quản lý session của từng người dùng.
+df_original: pd.DataFrame = None
+df_cleaned: pd.DataFrame = None
+
+# === Hàm trợ giúp ===
+def clean_column_name(name: str) -> str:
     """
-    Hàm duy nhất để đọc, làm sạch tên cột và chuẩn hóa dữ liệu.
+    Hàm chuẩn hóa tên cột: loại bỏ ký tự đặc biệt,
+    chuyển khoảng trắng thành gạch dưới, và viết thường.
+    Ví dụ: '1. What is your age group?' -> 'what_is_your_age_group'
     """
-    try:
-        df = pd.read_csv(filepath)
-    except FileNotFoundError:
-        print(f"Lỗi: Không tìm thấy file tại '{filepath}'.")
-        return None
+    if not isinstance(name, str):
+        return str(name)
+    name = name.strip()
+    # Bước 1: Bỏ ký tự đặc biệt, nhưng giữ lại khoảng trắng
+    name = re.sub(r'[^a-zA-Z0-9\s]', '', name)
+    # Bước 2: Thay thế một hoặc nhiều khoảng trắng bằng một gạch dưới
+    name = re.sub(r'\s+', '_', name)
+    return name.lower()
 
-    # B1: Làm sạch tên cột (chuyển thành snake_case)
-    # Ví dụ: '1. What is your age group?' -> 'what_is_your_age_group'
-    def clean_col(name):
-        name = name.strip()
-        name = re.sub(r'[^a-zA-Z0-9\s]', '', name) # Bỏ ký tự đặc biệt
-        name = re.sub(r'\s+', '_', name) # Thay khoảng trắng bằng gạch dưới
-        return name.lower()
-
-    df.columns = [clean_col(col) for col in df.columns]
-
-    # B2: Làm sạch dữ liệu bên trong các cột cụ thể
-    # Dùng .get() để tránh lỗi nếu cột không tồn tại
-    if df.get('how_many_hours_per_day_do_you_spend_online') is not None:
-        df['how_many_hours_per_day_do_you_spend_online'] = df['how_many_hours_per_day_do_you_spend_online'].str.replace('"', '', regex=False)
-        
-    if df.get('what_is_your_most_used_social_media_platform') is not None:
-        df['what_is_your_most_used_social_media_platform'] = df['what_is_your_most_used_social_media_platform'].str.strip()
-        df['what_is_your_most_used_social_media_platform'] = df['what_is_your_most_used_social_media_platform'].replace({
-            'X (Formerly Twitter)': 'X',
-            'WhatsApp': 'Whatsapp' # Chuẩn hóa Whatsapp
-        })
-    
-    return df
-
-# Đọc dữ liệu khi server khởi động
-df_original = load_and_clean_data('data/HybridDataset.csv')
-
-# --- ĐỊNH NGHĨA CÁC API ENDPOINTS ---
+# === Định nghĩa API Endpoints ===
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the Social Media User Behavior API"}
+    """Endpoint gốc để kiểm tra API có hoạt động không."""
+    return {"message": "Welcome to the Dynamic CSV Analysis API"}
 
-def create_response(df: pd.DataFrame, column_name: str):
-    """Hàm trợ giúp để tạo response, tránh lặp code."""
-    if df is None:
-        return {"error": "Dataset not loaded or is empty."}
-    if column_name not in df.columns:
-        return {"error": f"Column '{column_name}' not found. Available columns: {list(df.columns)}"}
+@app.post("/api/upload", summary="Upload a CSV file for analysis")
+async def upload_csv(file: UploadFile = File(...)):
+    """
+    Nhận một file CSV từ người dùng, đọc nó vào hai DataFrame (gốc và đã làm sạch),
+    và lưu trữ chúng trong bộ nhớ.
+    """
+    global df_original, df_cleaned
     
-    counts = df[column_name].value_counts().reset_index()
-    counts.columns = ['label', 'count']
-    return counts.to_dict(orient='records')
-
-# CÁC ENDPOINT SỬ DỤNG TÊN CỘT ĐÃ ĐƯỢC LÀM SẠCH (snake_case)
-@app.get("/api/age-distribution")
-def get_age_distribution():
-    return create_response(df_original, 'what_is_your_age_group')
-
-@app.get("/api/occupation-distribution")
-def get_occupation_distribution():
-    return create_response(df_original, 'what_is_your_occupation')
-
-@app.get("/api/platform-popularity")
-def get_platform_popularity():
-    return create_response(df_original, 'what_is_your_most_used_social_media_platform')
-
-@app.get("/api/daily-hours")
-def get_daily_hours():
-    column_name = 'how_many_hours_per_day_do_you_spend_online'
-    if df_original is None or column_name not in df_original.columns:
-        return create_response(df_original, column_name)
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Invalid file type. Please upload a CSV file.")
     
-    # Sắp xếp lại thứ tự cho hợp lý
-    order = ['Less than 2', '2-4', '4-6', '6-8', 'More than 8']
-    counts = df_original[column_name].value_counts().reindex(order).reset_index()
-    counts.columns = ['label', 'count']
-    return counts.to_dict(orient='records')
+    try:
+        contents = await file.read()
+        buffer = io.StringIO(contents.decode('utf-8'))
+        
+        # 1. Đọc và lưu DataFrame gốc
+        df_original = pd.read_csv(buffer)
+        
+        # 2. Tạo một bản sao để làm sạch
+        df_cleaned = df_original.copy()
 
-@app.get("/api/device-usage")
-def get_device_usage():
-    return create_response(df_original, 'what_device_do_you_use_most_to_access_the_internet')
+        # 3. Làm sạch tên cột trên bản sao
+        df_cleaned.columns = [clean_column_name(col) for col in df_cleaned.columns]
+        
+        # Xử lý cơ bản khác nếu cần (ví dụ: loại bỏ cột "Unnamed")
+        df_cleaned = df_cleaned.loc[:, ~df_cleaned.columns.str.contains('^unnamed')]
+
+        return {"filename": file.filename, "message": "File uploaded and processed successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {e}")
+
+@app.get("/api/columns", summary="Get analyzable columns")
+def get_columns() -> Dict[str, List[Dict[str, str]]]:
+    """
+    Trả về một danh sách các cột phù hợp để phân tích (dạng chữ/phân loại).
+    Mỗi cột là một object chứa `displayName` (để hiển thị) và `apiKey` (để gọi API).
+    """
+    global df_original, df_cleaned
+    
+    if df_original is None or df_cleaned is None:
+        raise HTTPException(status_code=404, detail="No CSV file has been uploaded yet.")
+    
+    column_map = []
+    # Chỉ lấy các cột có kiểu dữ liệu là 'object' (văn bản) từ DataFrame gốc
+    categorical_columns = df_original.select_dtypes(include=['object', 'category']).columns
+
+    for col_original in categorical_columns:
+        col_cleaned = clean_column_name(col_original)
+        # Đảm bảo cột đã được làm sạch vẫn tồn tại trong DataFrame đã xử lý
+        if col_cleaned in df_cleaned.columns:
+            column_map.append({
+                "displayName": col_original,
+                "apiKey": col_cleaned
+            })
+            
+    return {"columns": column_map}
+
+@app.get("/api/analyze/{column_key}", summary="Analyze a specific column")
+def analyze_column(column_key: str):
+    """
+    Thực hiện phân tích đếm số lượng (`value_counts`) trên một cột được chỉ định
+    bằng `column_key` (tên đã được làm sạch).
+    """
+    global df_cleaned
+    
+    if df_cleaned is None:
+        raise HTTPException(status_code=404, detail="No CSV file has been uploaded yet.")
+    
+    if column_key not in df_cleaned.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{column_key}' not found in the processed data.")
+    
+    try:
+        # Thực hiện phân tích và định dạng lại kết quả
+        counts = df_cleaned[column_key].value_counts().reset_index()
+        counts.columns = ['label', 'count']
+        
+        # Giới hạn 20 kết quả hàng đầu để biểu đồ không bị quá tải
+        top_20_counts = counts.head(20)
+
+        return top_20_counts.to_dict(orient='records')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing column '{column_key}': {e}")

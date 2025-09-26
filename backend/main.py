@@ -126,13 +126,53 @@ def analyze_column(column_key: str):
         raise HTTPException(status_code=400, detail=f"Column '{column_key}' not found in the processed data.")
     
     try:
-        # Thực hiện phân tích và định dạng lại kết quả
         counts = df_cleaned[column_key].value_counts().reset_index()
         counts.columns = ['label', 'count']
         
-        # Giới hạn 20 kết quả hàng đầu để biểu đồ không bị quá tải
+        # MỚI: Cắt ngắn các nhãn quá dài để hiển thị đẹp hơn
+        counts['label'] = counts['label'].astype(str).apply(lambda x: (x[:40] + '...') if len(x) > 40 else x)
+        
         top_20_counts = counts.head(20)
-
         return top_20_counts.to_dict(orient='records')
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error analyzing column '{column_key}': {e}")
+    
+@app.get("/api/analyze-grouped", summary="Perform grouped analysis on two columns")
+def analyze_grouped(dimension_col: str, breakdown_col: str):
+    """
+    Thực hiện phân tích chéo (crosstab) giữa hai cột.
+    - dimension_col: Cột chính để phân tích (ví dụ: nền tảng). Sẽ trở thành các 'series' trong biểu đồ.
+    - breakdown_col: Cột để phân nhóm (ví dụ: độ tuổi). Sẽ trở thành trục X của biểu đồ.
+    """
+    global df_cleaned
+    
+    if df_cleaned is None:
+        raise HTTPException(status_code=404, detail="No CSV file has been uploaded yet.")
+    
+    if dimension_col not in df_cleaned.columns or breakdown_col not in df_cleaned.columns:
+        raise HTTPException(status_code=400, detail="One or both specified columns not found.")
+        
+    try:
+        # Sử dụng pandas.crosstab để thực hiện phân tích chéo
+        crosstab_df = pd.crosstab(df_cleaned[dimension_col], df_cleaned[breakdown_col])
+        
+        # Giới hạn 10 giá trị hàng đầu của cột dimension để biểu đồ không quá rối
+        if len(crosstab_df) > 10:
+            top_dimensions = df_cleaned[dimension_col].value_counts().nlargest(10).index
+            crosstab_df = crosstab_df.loc[top_dimensions]
+
+        # Chuyển đổi DataFrame crosstab thành định dạng mà Chart.js có thể hiểu
+        labels = crosstab_df.columns.tolist() # ví dụ: ['18-24', '25-34', '55+']
+        datasets = []
+        
+        # Mỗi hàng trong crosstab_df là một dataset cho Chart.js
+        for index, row in crosstab_df.iterrows():
+            datasets.append({
+                "label": str(index), # Đảm bảo label là string
+                "data": row.tolist()
+            })
+            
+        return {"labels": labels, "datasets": datasets}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error during grouped analysis: {e}")
